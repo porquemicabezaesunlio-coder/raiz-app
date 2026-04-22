@@ -809,21 +809,21 @@ input:focus,select:focus{border-color:var(--a)}
     <div class="mhd"><h3>Dividir cuenta</h3><button class="mcl" id="mc-split" type="button">x</button></div>
     <div class="mbdy">
       <div class="ptabs mb2">
-        <button class="ptab on" id="stab-pers" type="button">Por personas</button>
+        <button class="ptab on" id="stab-pers" type="button">Partes iguales</button>
         <button class="ptab" id="stab-prod" type="button">Por producto</button>
       </div>
       <!-- Por personas -->
       <div id="split-pers">
-        <div class="fg"><label class="lbl">Dividir entre cuantas personas</label><input type="number" id="split-n" placeholder="2" min="2" max="20"></div>
+        <div class="fg"><label class="lbl">Dividir en cuantas subcuentas</label><input type="number" id="split-n" placeholder="2" min="2" max="10"></div>
         <div id="split-pers-preview"></div>
-        <button class="btn bpr bbl mt3" id="btn-split-pers" type="button">Generar tickets</button>
+        <button class="btn bpr bbl mt3" id="btn-split-pers" type="button">&#9984; Crear subcuentas</button>
       </div>
       <!-- Por producto -->
       <div id="split-prod" style="display:none">
-        <div class="slb">Asigna cada producto a una persona</div>
+        <div class="slb">Asigna cada producto a una subcuenta</div>
         <div id="split-prod-list"></div>
-        <button class="btn bbo bsm mt2" id="btn-split-addpers" type="button">+ Agregar persona</button>
-        <button class="btn bpr bbl mt3" id="btn-split-prod" type="button">Generar tickets</button>
+        <button class="btn bbo bsm mt2" id="btn-split-addpers" type="button">+ Agregar subcuenta</button>
+        <button class="btn bpr bbl mt3" id="btn-split-prod" type="button">&#9984; Crear subcuentas</button>
       </div>
     </div>
   </div>
@@ -862,6 +862,21 @@ input:focus,select:focus{border-color:var(--a)}
       <div id="vaso-cfg-list"></div>
       <div class="fg mt3"><label class="lbl">Nueva opcion</label>
         <div class="fg-r"><input type="text" id="vaso-nueva" placeholder="Ej: Con sal y limon"><button class="btn bpr bsm" id="btn-add-vaso" type="button">Agregar</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMAR -->
+<div class="mo3" id="m-confirm">
+  <div class="mdl" style="border-radius:14px;max-width:320px;margin:0 auto"><div class="mh"></div>
+    <div class="mbdy" style="text-align:center;padding:22px 18px">
+      <div style="font-size:1.5rem;margin-bottom:10px" id="confirm-icon">&#9888;</div>
+      <div style="font-weight:700;font-size:.95rem;color:var(--p);margin-bottom:6px" id="confirm-title"></div>
+      <div style="font-size:.79rem;color:var(--gr);margin-bottom:18px" id="confirm-msg"></div>
+      <div style="display:flex;gap:9px">
+        <button class="btn bgr" style="flex:1" id="confirm-cancel" type="button">Cancelar</button>
+        <button class="btn bpr" style="flex:1" id="confirm-ok" type="button">Confirmar</button>
       </div>
     </div>
   </div>
@@ -1009,7 +1024,7 @@ function calcTot(n){var m=MESAS[n];if(!m)return 0;var s=calcSub(n);if(!m.desc)re
 
 function renderMesas(){
   var ab=0,tot=0,propHoy=0,html="";
-  var keys=Object.keys(MESAS);
+  var keys=Object.keys(MESAS).sort();
   if(!keys.length){
     html="<div class=\"vc\"><div class=\"vi\">&#127869;</div><p>No hay cuentas abiertas</p><p style=\"margin-top:4px\">Toca el boton para abrir una</p></div>";
   }else{
@@ -1017,12 +1032,13 @@ function renderMesas(){
     for(var i=0;i<keys.length;i++){
       var k=keys[i];var m=MESAS[k];
       ab++;var t=calcTot(k);tot+=t;
-      var esBarra=m.tipo==="barra";
+      var esBarra=m.tipo==="barra";var esSub=m.esSub||false;
       var cls=m.enviada?(esBarra?"cc-enviada-b":"cc-enviada-m"):(esBarra?"cc-barra":"cc-mesa");
       var pend=0;if(m.items){for(var j=0;j<m.items.length;j++){if(!m.items[j].ent)pend+=m.items[j].q;}}
-      html+="<div class=\"cuenta-card "+cls+"\" onclick=\"openMesa('"+k+"')\">";
-      html+="<div class=\"cc-tipo\">"+(esBarra?"Barra":"Mesa")+"</div>";
-      html+="<div class=\"cc-num\">"+m.num+"</div>";
+      var subStyle=esSub?"opacity:.88;transform:scale(.97)":"";
+      html+="<div class=\"cuenta-card "+cls+"\" onclick=\"openMesa('"+k+"')\" style=\""+subStyle+"\">";
+      html+="<div class=\"cc-tipo\">"+(esBarra?"Barra":"Mesa")+(esSub?" &#9984;":"")+"</div>";
+      html+="<div class=\"cc-num\">"+esc(m.num)+"</div>";
       html+="<div class=\"cc-status\">"+(m.enviada?"Enviada":"Abierta")+(pend>0?" &middot; "+pend+"p":"")+"</div>";
       html+="<div class=\"cc-total\">"+fmt(t)+"</div>";
       html+="</div>";
@@ -1233,12 +1249,12 @@ function cobrar(){
 
 function cortesia(){
   var m=MESAS[mAct];if(!m||!m.items.length){toast("Agrega bebidas primero","w");return;}
-  if(!confirm("Registrar Mesa "+mAct+" como cortesia de Raiz?"))return;
+  var label=(m.tipo==="barra"?"Barra":"Mesa")+" "+m.num;
   var sub=calcSub(mAct);
-  var g={id:"g"+Date.now(),f:hoy(),c:"Cortesia Mesa "+mAct+" - "+m.ap,m:sub,t:"variable",cat:"Cortesia"};
+  var g={id:"g"+Date.now(),f:hoy(),c:"Cortesia "+label,m:sub,t:"variable",cat:"Cortesia"};
   GASTOS.push(g);sSet("gsts",GASTOS);
   cerrarYRegistrar(m,sub,0,0,sub,true);
-  toast("Cortesia registrada como gasto &#127939;");
+  toast("Cortesia registrada - "+fmt(sub)+" &#127939;");
 }
 
 function cerrarYRegistrar(m,sub,pct,propina,tot,esCortesia){
@@ -1271,9 +1287,10 @@ function cancelarMesa(){
   var m=MESAS[mAct];if(!m)return;
   if(m.enviada&&U.r!=="admin"){toast("Solo el admin puede cancelar cuentas enviadas","e");return;}
   var label=(m.tipo==="barra"?"Barra":"Mesa")+" "+m.num;
-  if(!confirm("Cancelar "+label+"?"))return;
-  COMANDAS=COMANDAS.filter(function(c){return c.mesa!==mAct;});saveComs();
-  delete MESAS[mAct];saveMesas();cerrarM("m-mesa");renderMesas();renderBarista();toast(label+" cancelada","w");
+  confirmar("Cancelar "+label,"Esta accion no se puede deshacer","&#128465;",function(){
+    COMANDAS=COMANDAS.filter(function(c){return c.mesa!==mAct;});saveComs();
+    delete MESAS[mAct];saveMesas();cerrarM("m-mesa");renderMesas();renderBarista();toast(label+" cancelada","w");
+  });
 }
 
 // BARISTA
@@ -1465,7 +1482,12 @@ function openEditBeb(id){
 }
 function addIng(bot,oz){var cont=el("ing-l");var div=document.createElement("div");div.className="ingr";var opts="<option value=\"\">-- Botella --</option>";for(var i=0;i<BOTS.length;i++){opts+="<option value=\""+esc(BOTS[i].n)+"\""+(BOTS[i].n===bot?" selected":"")+">"+esc(BOTS[i].n)+"</option>";}div.innerHTML="<select>"+opts+"</select><input type=\"number\" placeholder=\"oz\" step=\"0.25\" min=\"0\" value=\""+(oz||"")+"\"><button class=\"irm\" type=\"button\" onclick=\"this.parentElement.remove()\">x</button>";cont.appendChild(div);}
 function guardarBeb(){var id=el("beb-id").value||"m"+Date.now();var n=el("beb-n").value.trim();var p=parseFloat(el("beb-p").value)||0;var c=el("beb-c").value;var tipo=el("beb-tipo").value;var desc=el("beb-desc").value.trim();if(!n||p<=0){toast("Completa nombre y precio","w");return;}var rec=[];var rows=el("ing-l").querySelectorAll(".ingr");for(var i=0;i<rows.length;i++){var s=rows[i].querySelector("select");var inp=rows[i].querySelector("input");if(s.value&&inp.value)rec.push({b:s.value,o:parseFloat(inp.value)||0});}var found=false;for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU[i]={id:id,n:n,p:p,c:c,tipo:tipo,desc:desc,r:rec};found=true;break;}}if(!found)MENU.push({id:id,n:n,p:p,c:c,tipo:tipo,desc:desc,r:rec});sSet("menu",MENU);cerrarM("m-beb");renderMenu();toast("Guardado");}
-function elimBeb(id){if(!confirm("Eliminar esta bebida?"))return;for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU.splice(i,1);break;}}sSet("menu",MENU);renderMenu();toast("Eliminada","w");}
+function elimBeb(id){
+  confirmar("Eliminar bebida","Se borrara del menu permanentemente","&#127861;",function(){
+    for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU.splice(i,1);break;}}
+    sSet("menu",MENU);renderMenu();toast("Eliminada","w");
+  });
+}
 
 // EMBAJADORES
 function setEmbTab(t){_embTab=t;["mes","trim","cust"].forEach(function(x){el("etab-"+x).className="ptab"+(x===t?" on":"");});el("emb-cust").style.display=t==="cust"?"block":"none";if(t!=="cust")renderEmbs();}
@@ -1562,13 +1584,24 @@ function copiarScript(){if(navigator.clipboard){navigator.clipboard.writeText(SC
 function fbCopy(){var ta=document.createElement("textarea");ta.value=SCRIPT;ta.style.cssText="position:fixed;top:0;left:0;opacity:0;width:1px;height:1px";document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand("copy");toast("Codigo copiado");}catch(e){toast("Copia manualmente","w");}document.body.removeChild(ta);}
 function exportar(){var data=JSON.stringify({u:USUARIOS,m:MENU,b:BOTS,ins:INS,g:GASTOS,gb:GBTNS,c:CFG,v:VENTAS,embs:EMBS},null,2);var a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(data);a.download="Raiz_backup_"+hoy()+".json";a.click();}
 function resetear(){
-  if(!confirm("Resetear TODOS los datos? Esta accion no se puede deshacer."))return;
-  try{localStorage.clear();}catch(e){}
-  if(window._fb){
-    var keys=["usrs","menu","bots","ins","gsts","gbs","cfg","msas","vnts","embs","coms"];
-    var ps=[];for(var i=0;i<keys.length;i++)ps.push(window._fb.del("raiz",keys[i]));
-    Promise.all(ps).then(function(){location.reload();}).catch(function(){location.reload();});
-  }else{location.reload();}
+  confirmar("Resetear todos los datos","Se borrara todo permanentemente. Sin vuelta atras.","&#9888;",function(){
+    try{localStorage.clear();}catch(e){}
+    if(window._fb){
+      var keys=["usrs","menu","bots","ins","gsts","gbs","cfg","msas","vnts","embs","coms"];
+      var ps=[];for(var i=0;i<keys.length;i++)ps.push(window._fb.del("raiz",keys[i]));
+      Promise.all(ps).then(function(){location.reload();}).catch(function(){location.reload();});
+    }else{location.reload();}
+  });
+}
+
+// CONFIRM MODAL (reemplaza confirm() nativo que falla en PWA)
+var _confirmCb=null;
+function confirmar(titulo,msg,icon,cb){
+  _confirmCb=cb;
+  el("confirm-title").textContent=titulo;
+  el("confirm-msg").textContent=msg||"";
+  el("confirm-icon").textContent=icon||"&#9888;";
+  abrirM("m-confirm");
 }
 
 // TOGGLE MENU EN MESA
@@ -1605,7 +1638,9 @@ function addVasoOpt(){
 var _splitTab="pers";var _splitPersonas=[];
 function abrirSplit(){
   var m=MESAS[mAct];if(!m||!m.items.length){toast("Agrega bebidas primero","w");return;}
-  _splitTab="pers";_splitPersonas=[{id:1,n:"Persona 1"},{id:2,n:"Persona 2"}];
+  // Solo cuentas originales (sin punto en la clave)
+  if(mAct.indexOf(".")!==-1){toast("Solo se pueden dividir cuentas originales","w");return;}
+  _splitTab="pers";_splitPersonas=[{id:1,n:"1"},{id:2,n:"2"}];
   el("stab-pers").className="ptab on";el("stab-prod").className="ptab";
   el("split-pers").style.display="block";el("split-prod").style.display="none";
   el("split-n").value=2;renderSplitPers();abrirM("m-split");
@@ -1622,30 +1657,59 @@ function renderSplitPers(){
   var n=parseInt(el("split-n").value)||2;
   var m=MESAS[mAct];if(!m)return;
   var sub=calcSub(mAct);var pct=m.desc==="ref"?CFG.ref/100:m.desc==="emp"?CFG.emp/100:0;
-  var tot=sub*(1-pct);var porPers=tot/n;
-  var html="<div class=\"split-ticket\"><div class=\"split-ticket-title\">Cada persona paga</div>";
-  html+="<div class=\"split-total\"><span>Total por persona</span><span>"+fmt(porPers)+"</span></div></div>";
+  var tot=sub*(1-pct);var porPers=Math.round((tot/n)*100)/100;
+  var html="<div class=\"split-ticket\">";
+  html+="<div class=\"split-ticket-title\">Se crearan "+n+" subcuentas</div>";
+  var base=mAct;
+  for(var i=1;i<=n;i++){html+="<div class=\"split-item-row\"><span>"+esc((m.tipo==="barra"?"Barra":"Mesa")+" "+m.num+"."+i)+"</span><span>~"+fmt(porPers)+"</span></div>";}
+  html+="<div style=\"font-size:.72rem;color:var(--gr);margin-top:8px\">Los productos se reparten en partes iguales. Puedes seguir agregando a cada subcuenta.</div>";
+  html+="</div>";
   el("split-pers-preview").innerHTML=html;
 }
 function generarTicketsPers(){
-  var n=parseInt(el("split-n").value)||2;if(n<2){toast("Minimo 2 personas","w");return;}
+  var n=parseInt(el("split-n").value)||2;if(n<2||n>10){toast("Entre 2 y 10 personas","w");return;}
   var m=MESAS[mAct];if(!m)return;
-  var sub=calcSub(mAct);var pct=m.desc==="ref"?CFG.ref/100:m.desc==="emp"?CFG.emp/100:0;
-  var tot=sub*(1-pct);var porPers=tot/n;
-  var html="";
+  // Crear subcuentas reales
   for(var i=1;i<=n;i++){
-    html+="<div class=\"split-ticket\"><div class=\"split-ticket-title\">Persona "+i+"</div>";
-    for(var j=0;j<m.items.length;j++){var it=m.items[j];html+="<div class=\"split-item-row\"><span>"+esc(it.n)+" x"+it.q+"</span><span>"+fmt(it.p*it.q/n)+"</span></div>";}
-    html+="<div class=\"split-total\"><span>Total</span><span>"+fmt(porPers)+"</span></div></div>";
+    var subKey=mAct+"."+i;
+    if(MESAS[subKey]){toast("Ya existen subcuentas para esta cuenta","e");return;}
   }
-  el("tickets-list").innerHTML=html;cerrarM("m-split");abrirM("m-tickets");
+  // Distribuir items - copia proporcional
+  var itemsCopy=JSON.parse(JSON.stringify(m.items));
+  // Para cada subcuenta crear una copia de los items dividida
+  for(var i=1;i<=n;i++){
+    var subKey=mAct+"."+i;
+    var subItems=[];
+    for(var j=0;j<itemsCopy.length;j++){
+      var it=itemsCopy[j];
+      var qBase=Math.floor(it.q/n);
+      var qExtra=(i<=it.q%n)?1:0;
+      var qSub=qBase+qExtra;
+      if(qSub>0){
+        subItems.push({id:it.id,n:it.n,p:it.p,q:qSub,r:it.r||[],ent:it.ent||0,locked:it.locked||false,vaso:it.vaso||null});
+      }
+    }
+    MESAS[subKey]={
+      tipo:m.tipo,num:m.num+"."+i,
+      ap:(m.tipo==="barra"?"Barra":"Mesa")+" "+m.num+"."+i,
+      pax:Math.ceil(m.pax/n),
+      embId:m.embId||null,embCod:m.embCod||null,
+      items:subItems,desc:m.desc||null,enviada:m.enviada||false,
+      payM:m.payM||"efec",propina:0,
+      esSub:true,padreKey:mAct
+    };
+  }
+  // Eliminar cuenta original
+  delete MESAS[mAct];
+  saveMesas();cerrarM("m-split");cerrarM("m-mesa");renderMesas();
+  toast((m.tipo==="barra"?"Barra":"Mesa")+" "+m.num+" dividida en "+n+" subcuentas &#9984;");
 }
 function renderSplitProd(){
   var m=MESAS[mAct];if(!m)return;
   var html="";
   for(var i=0;i<m.items.length;i++){
     var it=m.items[i];
-    var opts="";for(var j=0;j<_splitPersonas.length;j++){opts+="<option value=\""+_splitPersonas[j].id+"\">"+esc(_splitPersonas[j].n)+"</option>";}
+    var opts="";for(var j=0;j<_splitPersonas.length;j++){opts+="<option value=\""+_splitPersonas[j].id+"\">"+esc((m.tipo==="barra"?"B":"M")+" "+m.num+"."+_splitPersonas[j].n)+"</option>";}
     for(var q=0;q<it.q;q++){
       html+="<div class=\"prod-assign\"><span class=\"prod-assign-n\">"+esc(it.n)+"</span><select data-item=\""+i+"\" data-unit=\""+q+"\">"+opts+"</select></div>";
     }
@@ -1653,10 +1717,17 @@ function renderSplitProd(){
   el("split-prod-list").innerHTML=html;
 }
 function addSplitPers(){
-  var n=_splitPersonas.length+1;_splitPersonas.push({id:n,n:"Persona "+n});renderSplitProd();toast("Persona "+n+" agregada");
+  var n=_splitPersonas.length+1;if(n>10){toast("Maximo 10 subcuentas","w");return;}
+  _splitPersonas.push({id:n,n:""+n});renderSplitProd();toast("Subcuenta "+n+" agregada");
 }
 function generarTicketsProd(){
   var m=MESAS[mAct];if(!m)return;
+  var n=_splitPersonas.length;
+  // Verificar que no existan subcuentas
+  for(var j=0;j<_splitPersonas.length;j++){
+    if(MESAS[mAct+"."+_splitPersonas[j].id]){toast("Ya existen subcuentas para esta cuenta","e");return;}
+  }
+  // Construir assigns desde selects
   var assigns={};for(var j=0;j<_splitPersonas.length;j++)assigns[_splitPersonas[j].id]=[];
   var rows=el("split-prod-list").querySelectorAll(".prod-assign");
   for(var i=0;i<rows.length;i++){
@@ -1664,22 +1735,26 @@ function generarTicketsProd(){
     var itemIdx=parseInt(sel.getAttribute("data-item"));
     var it=m.items[itemIdx];
     var found=false;
-    for(var j=0;j<assigns[persId].length;j++){if(assigns[persId][j].id===it.id&&assigns[persId][j].n===it.n){assigns[persId][j].q++;assigns[persId][j].tot+=it.p;found=true;break;}}
-    if(!found)assigns[persId].push({id:it.id,n:it.n,q:1,tot:it.p});
+    for(var j=0;j<assigns[persId].length;j++){
+      if(assigns[persId][j].id===it.id&&assigns[persId][j].n===it.n&&assigns[persId][j].locked===it.locked){assigns[persId][j].q++;found=true;break;}
+    }
+    if(!found)assigns[persId].push({id:it.id,n:it.n,p:it.p,q:1,r:it.r||[],ent:0,locked:it.locked||false,vaso:it.vaso||null});
   }
-  var pct=m.desc==="ref"?CFG.ref/100:m.desc==="emp"?CFG.emp/100:0;
-  var html="";
+  // Crear subcuentas
   for(var j=0;j<_splitPersonas.length;j++){
-    var p=_splitPersonas[j];var items=assigns[p.id];
-    if(!items||!items.length)continue;
-    var subtot=0;for(var k=0;k<items.length;k++)subtot+=items[k].tot;
-    var tot=subtot*(1-pct);
-    html+="<div class=\"split-ticket\"><div class=\"split-ticket-title\">"+esc(p.n)+"</div>";
-    for(var k=0;k<items.length;k++){html+="<div class=\"split-item-row\"><span>"+esc(items[k].n)+" x"+items[k].q+"</span><span>"+fmt(items[k].tot)+"</span></div>";}
-    if(pct>0)html+="<div class=\"split-item-row\"><span>Descuento</span><span>-"+fmt(subtot*pct)+"</span></div>";
-    html+="<div class=\"split-total\"><span>Total</span><span>"+fmt(tot)+"</span></div></div>";
+    var p=_splitPersonas[j];var subKey=mAct+"."+p.id;
+    MESAS[subKey]={
+      tipo:m.tipo,num:m.num+"."+p.id,
+      ap:(m.tipo==="barra"?"Barra":"Mesa")+" "+m.num+"."+p.id,
+      pax:1,embId:m.embId||null,embCod:m.embCod||null,
+      items:assigns[p.id],desc:m.desc||null,enviada:m.enviada||false,
+      payM:m.payM||"efec",propina:0,
+      esSub:true,padreKey:mAct
+    };
   }
-  el("tickets-list").innerHTML=html;cerrarM("m-split");abrirM("m-tickets");
+  delete MESAS[mAct];
+  saveMesas();cerrarM("m-split");cerrarM("m-mesa");renderMesas();
+  toast((m.tipo==="barra"?"Barra":"Mesa")+" "+m.num+" dividida en "+n+" subcuentas &#9984;");
 }
 
 // TRASPASAR PRODUCTOS
@@ -1776,6 +1851,8 @@ function bindAll(){
   for(var i=0;i<sbItems.length;i++){sbItems[i].onclick=function(){navTo(this.getAttribute("data-p"));};}
   var cls={"mc-abrir":"m-abrir","mc-mesa":"m-mesa","mc-beb":"m-beb","mc-bot":"m-bot","mc-stk":"m-stk","mc-ins":"m-ins","mc-gasto":"m-gasto","mc-gbt":"m-gbt","mc-emb":"m-emb","mc-usr":"m-usr","mc-pwd":"m-pwd","mc-perf":"m-perf","mc-sh":"m-sh","mc-vaso":"m-vaso","mc-split":"m-split","mc-trasp":"m-trasp","mc-tickets":"m-tickets","mc-vaso-cfg":"m-vaso-cfg","mc-tickets-close":"m-tickets"};
   for(var k in cls){(function(bid,mid){var e=el(bid);if(e)e.onclick=function(){cerrarM(mid);};})(k,cls[k]);}
+  el("confirm-cancel").onclick=function(){cerrarM("m-confirm");};
+  el("confirm-ok").onclick=function(){cerrarM("m-confirm");if(_confirmCb){var cb=_confirmCb;_confirmCb=null;cb();}};
   var mos=document.querySelectorAll(".mo3");for(var i=0;i<mos.length;i++){mos[i].onclick=function(e){if(e.target===this)this.classList.remove("on");};}
   // Nueva cuenta
   el("btn-nueva-cuenta").onclick=initAbrir;
