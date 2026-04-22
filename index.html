@@ -351,7 +351,7 @@ input:focus,select:focus{border-color:var(--a)}
       </div>
       <div class="fg-r mb3">
         <button class="btn bpr" style="flex:2" id="btn-nueva-cuenta" type="button">&#43; Abrir nueva cuenta</button>
-        <button class="btn bbo bsm" id="btn-juntar-open" style="display:none" type="button">&#128279; Juntar</button>
+        <button class="btn bbo bsm" id="btn-juntar-open" type="button">&#128279; Juntar</button>
         <button class="btn bgr bsm" id="btn-ver-cerradas" type="button">&#128196; Cerradas</button>
       </div>
       <div id="mesas-g"></div>
@@ -889,6 +889,7 @@ input:focus,select:focus{border-color:var(--a)}
         <div style="font-size:.76rem;color:var(--gr);margin-top:4px" id="cp-detalle"></div>
       </div>
       <div class="slb">Confirma metodo de pago</div>
+      <div style="font-size:.73rem;color:var(--gr);margin-bottom:8px" id="cp-hint"></div>
       <div class="pay-opts">
         <div class="pay-btn on" id="cp-efec"><span class="pi">&#128181;</span><span class="pl">Efectivo</span></div>
         <div class="pay-btn" id="cp-tarj"><span class="pi">&#128179;</span><span class="pl">Tarjeta</span></div>
@@ -1181,8 +1182,7 @@ function openMesa(n){
   var dbs=document.querySelector(".dbs");if(dbs)dbs.style.display=isA?"flex":"none";
   var btnCort=el("btn-cortesia");if(btnCort)btnCort.style.display=isA?"inline-flex":"none";
   var btnSplit=el("btn-split");if(btnSplit)btnSplit.style.display=isA?"inline-flex":"none";
-  renderBebsM();renderItemsM();syncDesc();syncTot();abrirM("m-mesa");
-}
+  renderBebsM();renderItemsM();syncDesc();syncTot();abrirM("m-mesa");}
 
 function renderBebsM(){
   var cats=[];for(var i=0;i<MENU.length;i++){if(cats.indexOf(MENU[i].c)<0)cats.push(MENU[i].c);}
@@ -1942,12 +1942,29 @@ function abrirConfirmarPago(){
   el("cp-detalle").textContent=det.length?det.join(" · "):"";
   el("cp-efec").className="pay-btn"+((_cpPayM==="efec")?" on":"");
   el("cp-tarj").className="pay-btn"+((_cpPayM==="tarj")?" on":"");
+  el("cp-hint").textContent="Metodo elegido en la cuenta: "+(_payM==="tarj"?"Tarjeta &#128179;":"Efectivo &#128181;");
+  sincronizarBtnConfirmar();
   abrirM("m-confirmar-pago");
 }
 function setCpPayM(t){
   _cpPayM=t;
   el("cp-efec").className="pay-btn"+(t==="efec"?" on":"");
   el("cp-tarj").className="pay-btn"+(t==="tarj"?" on":"");
+  sincronizarBtnConfirmar();
+}
+function sincronizarBtnConfirmar(){
+  var btn=el("btn-cp-confirmar");
+  var coincide=(_cpPayM===_payM);
+  if(coincide){
+    btn.disabled=false;
+    btn.style.opacity="1";
+    btn.textContent="&#10003; Confirmar y cerrar cuenta";
+  }else{
+    btn.disabled=true;
+    btn.style.opacity=".4";
+    var metodo=_payM==="tarj"?"Tarjeta":"Efectivo";
+    btn.textContent="Selecciona "+metodo+" para continuar";
+  }
 }
 function confirmarPagoFinal(){
   _payM=_cpPayM;
@@ -2094,11 +2111,6 @@ function aplicarAdminControles(){
   // Descuentos y cortesia
   var dbs=document.querySelector(".dbs");if(dbs)dbs.style.display=isA?"flex":"none";
   var btnCort=el("btn-cortesia");if(btnCort)btnCort.style.display=isA?"inline-flex":"none";
-  // Split y trasp - solo admin
-  var btnSplit=el("btn-split");if(btnSplit)btnSplit.style.display=isA?"inline-flex":"none";
-  var btnTrasp=el("btn-trasp-open");if(btnTrasp)btnTrasp.style.display=isA?"inline-flex":"none";
-  // Juntar
-  var btnJuntar=el("btn-juntar-open");if(btnJuntar)btnJuntar.style.display=isA?"inline-flex":"none";
 }
 
 // BIND
