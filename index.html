@@ -1053,13 +1053,35 @@ function doLogin(){
   var found=null;for(var i=0;i<USUARIOS.length;i++){if((USUARIOS[i].u||"").toLowerCase()===u||(USUARIOS[i].nom||"").toLowerCase()===u){found=USUARIOS[i];break;}}
   if(!found){toast("Usuario no encontrado","e");return;}
   if(found.p!==p){toast("Contrasena incorrecta","e");return;}
-  U=found;el("login").style.display="none";
+  U=found;
+  try{localStorage.setItem("rz_sesion",JSON.stringify({id:U.id,ts:Date.now()}));}catch(e){}
+  entrarConUsuario();
+}
+function entrarConUsuario(){
+  el("login").style.display="none";
   el("sb-uname").textContent=(U.em?U.em+" ":"")+U.nom;
   el("sb-urole").textContent=U.r==="admin"?"Administrador":"Empleado";
   el("sb-avatar").textContent=U.em||"&#127807;";
-  aplicarRoles();renderTodo();toast("Bienvenido, "+U.nom);
+  aplicarRoles();renderTodo();
 }
-function doLogout(){U=null;cerrarSidebar();el("login").style.display="flex";el("lu").value="";el("lp").value="";}
+function restaurarSesion(){
+  try{
+    var s=localStorage.getItem("rz_sesion");
+    if(!s)return false;
+    var obj=JSON.parse(s);
+    // Sesion valida por 30 dias
+    if(Date.now()-obj.ts>30*24*60*60*1000){localStorage.removeItem("rz_sesion");return false;}
+    for(var i=0;i<USUARIOS.length;i++){
+      if(USUARIOS[i].id===obj.id){U=USUARIOS[i];return true;}
+    }
+  }catch(e){}
+  return false;
+}
+function doLogout(){
+  U=null;
+  try{localStorage.removeItem("rz_sesion");}catch(e){}
+  cerrarSidebar();el("login").style.display="flex";el("lu").value="";el("lp").value="";
+}
 
 function abrirSidebar(){el("sidebar").classList.add("on");el("sidebar-overlay").classList.add("on");el("ham").classList.add("on");}
 function cerrarSidebar(){el("sidebar").classList.remove("on");el("sidebar-overlay").classList.remove("on");el("ham").classList.remove("on");}
@@ -2131,33 +2153,34 @@ function solicitarNotificaciones(){
 
 function registrarServiceWorker(){
   if(!("serviceWorker" in navigator))return;
-  // Crear SW inline como blob
-  var swCode='self.addEventListener("push",function(e){var d=e.data?e.data.json():{};e.waitUntil(self.registration.showNotification(d.title||"Raiz",{body:d.body||"Nueva comanda",icon:d.icon||"",badge:d.icon||"",vibrate:[200,100,200],tag:"comanda",renotify:true}));});self.addEventListener("notificationclick",function(e){e.notification.close();e.waitUntil(clients.matchAll({type:"window"}).then(function(cs){if(cs.length>0){cs[0].focus();}else{clients.openWindow("/");}})});self.addEventListener("message",function(e){if(e.data&&e.data.type==="SHOW_NOTIF"){self.registration.showNotification(e.data.title,{body:e.data.body,icon:e.data.icon||"",badge:e.data.icon||"",vibrate:[200,100,200],tag:"comanda",renotify:true});}});';
-  try{
-    var blob=new Blob([swCode],{type:"application/javascript"});
-    var swUrl=URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl,{scope:"/"}).then(function(reg){
-      _swReg=reg;
-    }).catch(function(){
-      // Fallback: register from same origin if blob fails
-      navigator.serviceWorker.getRegistration().then(function(reg){if(reg)_swReg=reg;});
+  navigator.serviceWorker.register("./sw.js",{scope:"./"}).then(function(reg){
+    _swReg=reg;
+    // Si hay una actualizacion disponible, activarla
+    if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});
+    reg.addEventListener("updatefound",function(){
+      var nw=reg.installing;if(nw)nw.addEventListener("statechange",function(){if(nw.state==="installed"&&navigator.serviceWorker.controller)nw.postMessage({type:"SKIP_WAITING"});});
     });
-  }catch(e){
-    navigator.serviceWorker.getRegistration().then(function(reg){if(reg)_swReg=reg;});
-  }
+  }).catch(function(err){
+    console.log("SW no disponible:",err);
+  });
 }
 
 function mandarNotificacion(titulo,cuerpo){
   playBtSound();
-  if(!_notifPermiso&&Notification.permission==="granted")_notifPermiso=true;
-  if(_notifPermiso){
-    // Intentar via Service Worker primero (funciona con app cerrada)
-    if(_swReg&&_swReg.active){
-      _swReg.active.postMessage({type:"SHOW_NOTIF",title:titulo,body:cuerpo});
-    }else{
-      // Fallback: Notification directa (solo funciona con app abierta)
-      try{new Notification(titulo,{body:cuerpo,tag:"comanda",renotify:true,vibrate:[200,100,200]});}catch(e){}
-    }
+  if(!_notifPermiso&&"Notification" in window&&Notification.permission==="granted")_notifPermiso=true;
+  if(!_notifPermiso)return;
+  var msg={type:"SHOW_NOTIF",title:titulo,body:cuerpo,url:"./"};
+  if(_swReg&&_swReg.active){
+    // Via Service Worker — funciona con pantalla bloqueada
+    _swReg.active.postMessage(msg);
+  }else if(_swReg){
+    // SW existe pero no activo aun, esperar
+    navigator.serviceWorker.ready.then(function(reg){
+      _swReg=reg;if(reg.active)reg.active.postMessage(msg);
+    });
+  }else{
+    // Fallback directo — solo funciona con app abierta
+    try{new Notification(titulo,{body:cuerpo,tag:"comanda-raiz",renotify:true});}catch(e){}
   }
 }
 
@@ -2321,9 +2344,18 @@ function bindAll(){
   el("res-fecha").value=hoy();
 }
 
-var _fbTO=setTimeout(function(){initDatos();bindAll();registrarServiceWorker();listenFB();},3000);
-document.addEventListener("fb-ready",function(){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();registrarServiceWorker();listenFB();});});
-if(window._fbReady){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();registrarServiceWorker();listenFB();});}
+function arrancar(){
+  initDatos();bindAll();registrarServiceWorker();
+  if(restaurarSesion()){
+    entrarConUsuario();
+    toast("Bienvenido de nuevo, "+U.nom);
+  }
+  listenFB();
+}
+
+var _fbTO=setTimeout(function(){arrancar();},3000);
+document.addEventListener("fb-ready",function(){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;arrancar();});});
+if(window._fbReady){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;arrancar();});}
 </script>
 </body>
 </html>
