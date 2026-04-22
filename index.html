@@ -364,6 +364,11 @@ input:focus,select:focus{border-color:var(--a)}
         <span>Comandas del turno</span>
         <span id="bt-badge" style="display:none;background:var(--t);color:#fff;font-size:.7rem;font-weight:700;padding:3px 9px;border-radius:12px">0 nuevas</span>
       </div>
+      <div id="bt-notif-banner" style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:none">
+        <div style="color:#fff;font-weight:700;font-size:.84rem;margin-bottom:3px">&#128276; Activa las notificaciones</div>
+        <div style="color:rgba(255,255,255,.8);font-size:.73rem;margin-bottom:9px">Para recibir alertas cuando llegue una comanda, aunque el telefono este bloqueado</div>
+        <button class="btn bsm" style="background:#fff;color:#1d4ed8;font-weight:700" id="btn-pedir-notif" type="button">Activar notificaciones</button>
+      </div>
       <div id="bartender-comandas"></div>
     </div>
 
@@ -1083,7 +1088,7 @@ function navTo(p){
   el("topbar-title").textContent=titles[p]||"";
   cerrarSidebar();
   if(p==="mesas")renderMesas();
-  if(p==="bartender")renderBartender();
+  if(p==="bartender"){renderBartender();pedirPermisoNotificaciones();}
   if(p==="resumen"){el("res-fecha").value=hoy();renderResumen();}
   if(p==="ventas")renderVentas();
   if(p==="inv")renderInv();
@@ -2073,26 +2078,100 @@ function ejecutarJuntar(){
   toast("Cuentas juntadas en "+(_juntarTipo==="barra"?"Barra":"Mesa")+" "+num+" &#128279;");
 }
 
-// BARTENDER SONIDO Y NOTIFICACION
-var _btComCount=0;var _btAudioCtx=null;
+// NOTIFICACIONES Y SONIDO
+var _btAudioCtx=null;var _swReg=null;var _notifPermiso=false;
+
 function playBtSound(){
   try{
     if(!_btAudioCtx)_btAudioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    var osc=_btAudioCtx.createOscillator();var gain=_btAudioCtx.createGain();
-    osc.connect(gain);gain.connect(_btAudioCtx.destination);
-    osc.frequency.setValueAtTime(880,_btAudioCtx.currentTime);
-    osc.frequency.setValueAtTime(1100,_btAudioCtx.currentTime+0.1);
-    gain.gain.setValueAtTime(0.3,_btAudioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,_btAudioCtx.currentTime+0.4);
-    osc.start(_btAudioCtx.currentTime);osc.stop(_btAudioCtx.currentTime+0.4);
+    var ctx=_btAudioCtx;
+    // Dos tonos ascendentes
+    [880,1100,880].forEach(function(freq,i){
+      var osc=ctx.createOscillator();var gain=ctx.createGain();
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.frequency.value=freq;
+      var t=ctx.currentTime+(i*0.12);
+      gain.gain.setValueAtTime(0.25,t);
+      gain.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+      osc.start(t);osc.stop(t+0.1);
+    });
   }catch(e){}
 }
+
+function pedirPermisoNotificaciones(){
+  if(!("Notification" in window)){
+    var b=el("bt-notif-banner");if(b)b.style.display="none";return;
+  }
+  if(Notification.permission==="granted"){
+    _notifPermiso=true;
+    var b=el("bt-notif-banner");if(b)b.style.display="none";
+    return;
+  }
+  if(Notification.permission==="denied"){
+    var b=el("bt-notif-banner");if(b)b.style.display="none";
+    return;
+  }
+  // Permiso pendiente - mostrar banner
+  var b=el("bt-notif-banner");if(b)b.style.display="block";
+}
+function solicitarNotificaciones(){
+  if(!("Notification" in window)){toast("Tu dispositivo no soporta notificaciones","w");return;}
+  Notification.requestPermission().then(function(result){
+    _notifPermiso=(result==="granted");
+    var b=el("bt-notif-banner");if(b)b.style.display="none";
+    if(_notifPermiso){
+      toast("Notificaciones activadas &#128276;");
+      // Mandar notificacion de prueba
+      setTimeout(function(){mandarNotificacion("Raiz. Bartender","Notificaciones activadas correctamente ✓");},500);
+    }else{
+      toast("Permiso denegado. Activa desde ajustes del celular","w");
+    }
+  }).catch(function(){toast("No se pudo activar","w");});
+}
+
+function registrarServiceWorker(){
+  if(!("serviceWorker" in navigator))return;
+  // Crear SW inline como blob
+  var swCode='self.addEventListener("push",function(e){var d=e.data?e.data.json():{};e.waitUntil(self.registration.showNotification(d.title||"Raiz",{body:d.body||"Nueva comanda",icon:d.icon||"",badge:d.icon||"",vibrate:[200,100,200],tag:"comanda",renotify:true}));});self.addEventListener("notificationclick",function(e){e.notification.close();e.waitUntil(clients.matchAll({type:"window"}).then(function(cs){if(cs.length>0){cs[0].focus();}else{clients.openWindow("/");}})});self.addEventListener("message",function(e){if(e.data&&e.data.type==="SHOW_NOTIF"){self.registration.showNotification(e.data.title,{body:e.data.body,icon:e.data.icon||"",badge:e.data.icon||"",vibrate:[200,100,200],tag:"comanda",renotify:true});}});';
+  try{
+    var blob=new Blob([swCode],{type:"application/javascript"});
+    var swUrl=URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl,{scope:"/"}).then(function(reg){
+      _swReg=reg;
+    }).catch(function(){
+      // Fallback: register from same origin if blob fails
+      navigator.serviceWorker.getRegistration().then(function(reg){if(reg)_swReg=reg;});
+    });
+  }catch(e){
+    navigator.serviceWorker.getRegistration().then(function(reg){if(reg)_swReg=reg;});
+  }
+}
+
+function mandarNotificacion(titulo,cuerpo){
+  playBtSound();
+  if(!_notifPermiso&&Notification.permission==="granted")_notifPermiso=true;
+  if(_notifPermiso){
+    // Intentar via Service Worker primero (funciona con app cerrada)
+    if(_swReg&&_swReg.active){
+      _swReg.active.postMessage({type:"SHOW_NOTIF",title:titulo,body:cuerpo});
+    }else{
+      // Fallback: Notification directa (solo funciona con app abierta)
+      try{new Notification(titulo,{body:cuerpo,tag:"comanda",renotify:true,vibrate:[200,100,200]});}catch(e){}
+    }
+  }
+}
+
 function checkNuevasComandasBt(prevCount){
   var hoyStr=hoy();
   var pend=COMANDAS.filter(function(c){return c.f===hoyStr&&c.items.some(function(it){return!it.listo;});});
   var newCount=pend.length;
   if(newCount>prevCount&&prevCount>=0){
-    playBtSound();
+    // Construir texto de la comanda nueva
+    var nuevas=COMANDAS.filter(function(c){return c.f===hoyStr&&c.items.some(function(it){return!it.listo;});});
+    var ultima=nuevas[nuevas.length-1];
+    var titulo="Nueva comanda &#9749;";
+    var cuerpo=ultima?(ultima.label||("Mesa "+ultima.mesa))+" — "+ultima.items.filter(function(i){return!i.listo;}).map(function(i){return"x"+i.q+" "+i.n;}).join(", "):"Nueva comanda llegada";
+    mandarNotificacion("Nueva comanda ☕",cuerpo);
     var badge=el("bt-badge");var sbBadge=el("sb-bt-badge");
     if(badge){badge.style.display="inline-block";badge.textContent=newCount+" pendiente"+(newCount>1?"s":"");}
     if(sbBadge)sbBadge.style.display="inline";
@@ -2163,6 +2242,7 @@ function bindAll(){
   el("btn-nueva-cuenta").onclick=initAbrir;
   el("btn-ver-cerradas").onclick=abrirCerradas;
   el("btn-juntar-open").onclick=abrirJuntar;
+  el("btn-pedir-notif").onclick=solicitarNotificaciones;
   el("tipo-mesa").onclick=function(){_tipoAct="mesa";el("tipo-mesa").className="pay-btn on";el("tipo-barra").className="pay-btn";};
   el("tipo-barra").onclick=function(){_tipoAct="barra";el("tipo-barra").className="pay-btn on";el("tipo-mesa").className="pay-btn";};
   el("btn-cabrir").onclick=confirmarAbrir;
@@ -2241,9 +2321,9 @@ function bindAll(){
   el("res-fecha").value=hoy();
 }
 
-var _fbTO=setTimeout(function(){initDatos();bindAll();listenFB();},3000);
-document.addEventListener("fb-ready",function(){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();listenFB();});});
-if(window._fbReady){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();listenFB();});}
+var _fbTO=setTimeout(function(){initDatos();bindAll();registrarServiceWorker();listenFB();},3000);
+document.addEventListener("fb-ready",function(){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();registrarServiceWorker();listenFB();});});
+if(window._fbReady){clearTimeout(_fbTO);loadFB(function(){_fbOk=true;initDatos();bindAll();registrarServiceWorker();listenFB();});}
 </script>
 </body>
 </html>
