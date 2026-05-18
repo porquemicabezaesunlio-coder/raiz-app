@@ -621,15 +621,21 @@ input:focus,select:focus{border-color:var(--a)}
     <div class="mhd"><h3 id="mbeb-t">Nueva bebida</h3><button class="mcl" id="mc-beb" type="button">x</button></div>
     <div class="mbdy">
       <input type="hidden" id="beb-id">
-      <div class="fg"><label class="lbl">Tipo</label><select id="beb-tipo"><option value="normal">Bebida normal</option><option value="paquete">Paquete / Combo</option></select></div>
+      <div class="fg"><label class="lbl">Tipo</label><select id="beb-tipo"><option value="normal">Bebida / Coctel</option><option value="copa">Licor por copa</option><option value="botella">Botella completa</option><option value="paquete">Paquete / Combo</option></select></div>
       <div class="fg"><label class="lbl">Nombre</label><input type="text" id="beb-n" placeholder="Ej: Mojito Clasico" autocorrect="off"></div>
       <div class="r2">
         <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="beb-p" placeholder="0.00" step="0.01" min="0"></div>
         <div class="fg"><label class="lbl">Categoria</label><select id="beb-c"><option>Cocteles</option><option>Cervezas</option><option>Vinos</option><option>Destilados</option><option>Sin alcohol</option><option>Paquetes</option><option>Otro</option></select></div>
       </div>
       <div class="fg" id="beb-desc-wrap" style="display:none"><label class="lbl">Descripcion del paquete</label><input type="text" id="beb-desc" placeholder="Ej: 5 cervezas Corona, 2x1 Margaritas..."></div>
+      <div class="fg" id="beb-copa-wrap" style="display:none"><label class="lbl">Oz por copa</label><input type="number" id="beb-copa-oz" placeholder="Ej: 2" step="0.25" min="0.25"></div>
+      <div class="fg" id="beb-botella-wrap" style="display:none">
+        <label class="lbl">Botella que se vende</label>
+        <select id="beb-botella-sel"><option value="">-- Selecciona botella --</option></select>
+        <div style="font-size:.72rem;color:var(--gr);margin-top:4px">Al vender, descuenta 1 botella del inventario automaticamente</div>
+      </div>
       <div id="beb-receta-wrap">
-        <div class="slb mt3">Receta (ingredientes en oz)</div>
+        <div class="slb mt3">Receta — ingredientes y cantidades</div>
         <div id="ing-l"></div>
         <button class="btn bbo bsm mt2" id="btn-adding" type="button">+ Ingrediente</button>
       </div>
@@ -1242,7 +1248,7 @@ function addBeb(id){
     var html="";
     for(var i=0;i<CFG.vasoOpts.length;i++){
       var o=CFG.vasoOpts[i];
-      var pStr=o.p>0?" <span style='color:var(--t);font-size:.76rem'>+"+fmt(o.p)+"</span>":"";
+      if(typeof o==="string")o={n:o,p:0};
       html+="<div class=\"vaso-opt\" data-xfn=\"elegirVaso\" data-xid=\""+i+"\">";
       html+="<span class=\"vaso-opt-n\">"+esc(o.n)+"</span>";
       if(o.p>0)html+="<span class=\"vaso-opt-p\">+"+fmt(o.p)+"</span>";
@@ -1258,6 +1264,7 @@ var _bebPendId=null;
 function elegirVaso(idx){
   var i=parseInt(idx);
   var o=CFG.vasoOpts?CFG.vasoOpts[i]:null;
+  if(typeof o==="string")o={n:o,p:0};
   var vasoN=o?o.n:null;var vasoP=o?o.p:0;
   cerrarM("m-vaso");
   _doAddBeb(_bebPendId,vasoN,vasoP);
@@ -1394,7 +1401,26 @@ function cerrarYRegistrar(m,sub,pct,propina,tot,esCortesia,gastoIdParam){
     }
     sSet("embs",EMBS);
   }
-  var ozMap={};for(var i=0;i<m.items.length;i++){var it=m.items[i];if(it.r){for(var j=0;j<it.r.length;j++){var rr=it.r[j];if(!ozMap[rr.b])ozMap[rr.b]=0;ozMap[rr.b]+=rr.o*it.q;}}}
+  var ozMap={};
+  for(var i=0;i<m.items.length;i++){
+    var it=m.items[i];
+    // Buscar la bebida en el menu para ver su tipo
+    var beb=null;for(var k=0;k<MENU.length;k++){if(MENU[k].id===it.id){beb=MENU[k];break;}}
+    if(beb&&beb.tipo==="botella"&&beb.botRef){
+      // Botella completa: descontar 1 botella del stock
+      for(var j=0;j<BOTS.length;j++){if(BOTS[j].n===beb.botRef){BOTS[j].st=Math.max(0,(BOTS[j].st||0)-it.q);break;}}
+    } else if(it.r){
+      for(var j=0;j<it.r.length;j++){
+        var rr=it.r[j];var ref=rr.b||"";
+        if(ref.indexOf("b:")===0){
+          var bn=ref.slice(2);if(!ozMap[bn])ozMap[bn]=0;ozMap[bn]+=rr.o*it.q;
+        } else if(ref&&ref.indexOf("i:")!==0){
+          // Formato viejo sin prefijo
+          if(!ozMap[ref])ozMap[ref]=0;ozMap[ref]+=rr.o*it.q;
+        }
+      }
+    }
+  }
   for(var bn in ozMap){for(var i=0;i<BOTS.length;i++){if(BOTS[i].n===bn){BOTS[i].ct=(BOTS[i].ct||0)+ozMap[bn];break;}}}
   sSet("bots",BOTS);cobHoy+=tot;
   // Guardar en CERRADAS para reabrir
@@ -1565,7 +1591,36 @@ function guardarGasto(){var c=el("gc").value.trim();var m=parseFloat(el("gm").va
 function guardarGBtn(){var n=el("gbn").value.trim();var m=parseFloat(el("gbm").value)||0;var em=el("gbe").value.trim();var t=el("gbt2").value;if(!n){toast("Escribe el nombre","w");return;}GBTNS.push({id:"gb"+Date.now(),n:n,m:m,em:em,t:t});sSet("gbs",GBTNS);cerrarM("m-gbt");renderGastos();toast("Boton creado");}
 
 // MENU
-function calcCostoBeb(beb){if(!beb.r||!beb.r.length)return 0;var c=0;for(var i=0;i<beb.r.length;i++){var r=beb.r[i];var b=null;for(var j=0;j<BOTS.length;j++){if(BOTS[j].n===r.b){b=BOTS[j];break;}}if(b&&b.oz>0)c+=r.o*(b.co/b.oz);}return c;}
+function calcCostoBeb(beb){
+  if(beb.tipo==="paquete")return 0;
+  if(beb.tipo==="botella"){
+    // Costo = costo de la botella completa
+    for(var j=0;j<BOTS.length;j++){if(BOTS[j].n===beb.botRef)return BOTS[j].co||0;}
+    return 0;
+  }
+  if(!beb.r||!beb.r.length)return 0;
+  var c=0;
+  for(var i=0;i<beb.r.length;i++){
+    var r=beb.r[i];var ref=r.b||"";
+    if(ref.indexOf("b:")===0){
+      // Botella
+      var bn=ref.slice(2);
+      for(var j=0;j<BOTS.length;j++){if(BOTS[j].n===bn&&BOTS[j].oz>0){c+=r.o*(BOTS[j].co/BOTS[j].oz);break;}}
+    } else if(ref.indexOf("i:")===0){
+      // Insumo
+      var iname=ref.slice(2);
+      for(var j=0;j<INS.length;j++){
+        if(INS[j].n===iname&&INS[j].ml>0&&INS[j].co>0){
+          c+=r.o*(INS[j].co/INS[j].ml);break;
+        }
+      }
+    } else if(ref){
+      // Formato viejo sin prefijo — buscar en botellas
+      for(var j=0;j<BOTS.length;j++){if(BOTS[j].n===ref&&BOTS[j].oz>0){c+=r.o*(BOTS[j].co/BOTS[j].oz);break;}}
+    }
+  }
+  return c;
+}
 function renderMenu(){
   var top=null,bottom=null,topM=-1,botM=999;
   for(var i=0;i<MENU.length;i++){var b=MENU[i];if(b.tipo==="paquete")continue;var c=calcCostoBeb(b);var m=b.p>0?((b.p-c)/b.p*100):0;if(m>topM){topM=m;top=b;}if(m<botM){botM=m;bottom=b;}}
@@ -1585,11 +1640,19 @@ function renderMenu(){
   var html="";
   for(var ci=0;ci<cats.length;ci++){html+="<div class=\"sec\">"+esc(cats[ci])+"</div>";
     for(var i=0;i<MENU.length;i++){if(MENU[i].c!==cats[ci])continue;var b=MENU[i];
-      var costo=b.tipo==="paquete"?0:calcCostoBeb(b);
+      var costo=calcCostoBeb(b);
       var margen=b.p>0&&b.tipo!=="paquete"?((b.p-costo)/b.p*100):-1;
       var mcls=margen>=60?"malt":margen>=35?"mmed":"mbaj";
-      var rec=b.tipo==="paquete"?(b.desc||"Paquete"):b.r&&b.r.length?b.r.map(function(r){return r.o+"oz "+r.b;}).join(", "):"Sin receta";
-      html+="<div class=\"mir2\"><div><div class=\"min3\">"+esc(b.n)+(b.tipo==="paquete"?" <span style=\"font-size:.62rem;background:var(--cr);color:var(--p2);padding:1px 5px;border-radius:4px\">Paquete</span>":"")+"</div><div class=\"mire\">"+esc(rec)+"</div>";
+      var rec="";
+      if(b.tipo==="paquete")rec=b.desc||"Paquete";
+      else if(b.tipo==="botella")rec="Botella completa"+(b.botRef?" · "+b.botRef:"");
+      else if(b.tipo==="copa")rec=(b.copaOz||"?")+"oz copa"+(b.botRef?" · "+b.botRef:"");
+      else rec=b.r&&b.r.length?b.r.map(function(r){var ref=r.b||"";var label=ref.indexOf("b:")===0?ref.slice(2):ref.indexOf("i:")===0?ref.slice(2):ref;return r.o+"oz "+label;}).join(", "):"Sin receta";
+      var tipoBadge="";
+      if(b.tipo==="paquete")tipoBadge=" <span style=\"font-size:.62rem;background:var(--cr);color:var(--p2);padding:1px 5px;border-radius:4px\">Paquete</span>";
+      else if(b.tipo==="botella")tipoBadge=" <span style=\"font-size:.62rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px\">Botella</span>";
+      else if(b.tipo==="copa")tipoBadge=" <span style=\"font-size:.62rem;background:#f3e8ff;color:#7c3aed;padding:1px 5px;border-radius:4px\">Copa</span>";
+      html+="<div class=\"mir2\"><div><div class=\"min3\">"+esc(b.n)+tipoBadge+"</div><div class=\"mire\">"+esc(rec)+"</div>";
       if(b.tipo!=="paquete")html+="<div style=\"font-size:.68rem;margin-top:1px\">Costo: "+fmt(costo)+" &middot; <span class=\""+mcls+"\">"+margen.toFixed(0)+"%</span></div>";
       html+="</div><div class=\"mirt\"><span class=\"mipr\">"+fmt(b.p)+"</span><button class=\"btn bxs bbo\" data-xfn=\"openEditBeb\" data-xid=\""+b.id+"\">Editar</button><button class=\"btn bxs\" style=\"background:#fbeae5;color:var(--t)\" data-xfn=\"elimBeb\" data-xid=\""+b.id+"\">x</button></div></div>";}}
   el("menu-l").innerHTML=html;bindXEvents(el("menu-l"));
@@ -1598,14 +1661,83 @@ function openEditBeb(id){
   var b=null;for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){b=MENU[i];break;}}
   el("mbeb-t").textContent=b?"Editar":"Nueva bebida";
   el("beb-id").value=b?b.id:"";el("beb-n").value=b?b.n:"";el("beb-p").value=b?b.p:"";
-  el("beb-c").value=b?b.c:"Cocteles";el("beb-tipo").value=b?(b.tipo||"normal"):"normal";
+  el("beb-c").value=b?b.c:"Cocteles";
+  var tipo=b?(b.tipo||"normal"):"normal";
+  el("beb-tipo").value=tipo;
   el("beb-desc").value=b?(b.desc||""):"";
-  el("beb-desc-wrap").style.display=(b&&b.tipo==="paquete")?"block":"none";
-  el("ing-l").innerHTML="";if(b&&b.r){for(var i=0;i<b.r.length;i++)addIng(b.r[i].b,b.r[i].o);}
+  el("beb-copa-oz").value=b?(b.copaOz||""):"";
+  // Populate botella selector
+  var botSel=el("beb-botella-sel");
+  botSel.innerHTML="<option value=\"\">-- Selecciona botella --</option>";
+  for(var i=0;i<BOTS.length;i++){
+    var sel=(b&&b.botRef===BOTS[i].n)?" selected":"";
+    botSel.innerHTML+="<option value=\""+esc(BOTS[i].n)+"\""+sel+">"+esc(BOTS[i].n)+"</option>";
+  }
+  // Show/hide fields based on tipo
+  actualizarCamposTipo(tipo);
+  // Load receta - handle both old format (b:name) and new
+  el("ing-l").innerHTML="";
+  if(b&&b.r){
+    for(var i=0;i<b.r.length;i++){
+      var ref=b.r[i].b||"";
+      addIng(ref,b.r[i].o);
+    }
+  }
   abrirM("m-beb");
 }
-function addIng(bot,oz){var cont=el("ing-l");var div=document.createElement("div");div.className="ingr";var opts="<option value=\"\">-- Botella --</option>";for(var i=0;i<BOTS.length;i++){opts+="<option value=\""+esc(BOTS[i].n)+"\""+(BOTS[i].n===bot?" selected":"")+">"+esc(BOTS[i].n)+"</option>";}div.innerHTML="<select>"+opts+"</select><input type=\"number\" placeholder=\"oz\" step=\"0.25\" min=\"0\" value=\""+(oz||"")+"\"><button class=\"irm\" type=\"button\" onclick=\"this.parentElement.remove()\">x</button>";cont.appendChild(div);}
-function guardarBeb(){var id=el("beb-id").value||"m"+Date.now();var n=el("beb-n").value.trim();var p=parseFloat(el("beb-p").value)||0;var c=el("beb-c").value;var tipo=el("beb-tipo").value;var desc=el("beb-desc").value.trim();if(!n||p<=0){toast("Completa nombre y precio","w");return;}var rec=[];var rows=el("ing-l").querySelectorAll(".ingr");for(var i=0;i<rows.length;i++){var s=rows[i].querySelector("select");var inp=rows[i].querySelector("input");if(s.value&&inp.value)rec.push({b:s.value,o:parseFloat(inp.value)||0});}var found=false;for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU[i]={id:id,n:n,p:p,c:c,tipo:tipo,desc:desc,r:rec};found=true;break;}}if(!found)MENU.push({id:id,n:n,p:p,c:c,tipo:tipo,desc:desc,r:rec});sSet("menu",MENU);cerrarM("m-beb");renderMenu();toast("Guardado");}
+function actualizarCamposTipo(tipo){
+  el("beb-desc-wrap").style.display=tipo==="paquete"?"block":"none";
+  el("beb-copa-wrap").style.display=tipo==="copa"?"block":"none";
+  el("beb-botella-wrap").style.display=tipo==="botella"?"block":"none";
+  el("beb-receta-wrap").style.display=(tipo==="botella")?"none":"block";
+}
+function addIng(bot,oz){
+  var cont=el("ing-l");var div=document.createElement("div");div.className="ingr";
+  // Grupo botellas
+  var opts="<option value=\"\">-- Ingrediente --</option>";
+  opts+="<optgroup label=\"Botellas\">";
+  for(var i=0;i<BOTS.length;i++){opts+="<option value=\"b:"+esc(BOTS[i].n)+"\""+(("b:"+BOTS[i].n)===bot?" selected":"")+">"+esc(BOTS[i].n)+"</option>";}
+  opts+="</optgroup>";
+  // Grupo insumos
+  if(INS.length){
+    opts+="<optgroup label=\"Insumos / Frutas\">";
+    for(var i=0;i<INS.length;i++){opts+="<option value=\"i:"+esc(INS[i].n)+"\""+(("i:"+INS[i].n)===bot?" selected":"")+">"+esc(INS[i].n)+"</option>";}
+    opts+="</optgroup>";
+  }
+  // Unidad label dinamica
+  div.innerHTML="<select>"+opts+"</select><input type=\"number\" placeholder=\"oz/ml\" step=\"0.25\" min=\"0\" value=\""+(oz||"")+"\"><button class=\"irm\" type=\"button\" onclick=\"this.parentElement.remove()\">x</button>";
+  cont.appendChild(div);
+}
+function guardarBeb(){
+  var id=el("beb-id").value||"m"+Date.now();
+  var n=el("beb-n").value.trim();var p=parseFloat(el("beb-p").value)||0;
+  var c=el("beb-c").value;var tipo=el("beb-tipo").value;
+  var desc=el("beb-desc").value.trim();
+  var copaOz=parseFloat(el("beb-copa-oz").value)||0;
+  var botRef=el("beb-botella-sel").value;
+  if(!n||p<=0){toast("Completa nombre y precio","w");return;}
+  if(tipo==="copa"&&!copaOz){toast("Indica los oz por copa","w");return;}
+  if(tipo==="botella"&&!botRef){toast("Selecciona la botella","w");return;}
+  var rec=[];
+  if(tipo!=="botella"){
+    var rows=el("ing-l").querySelectorAll(".ingr");
+    for(var i=0;i<rows.length;i++){
+      var s=rows[i].querySelector("select");var inp=rows[i].querySelector("input");
+      if(s.value&&inp.value)rec.push({b:s.value,o:parseFloat(inp.value)||0});
+    }
+  }
+  // Para copa, agregar automaticamente la botella como ingrediente si hay botRef
+  if(tipo==="copa"&&copaOz&&botRef){
+    var yaEsta=false;
+    for(var i=0;i<rec.length;i++){if(rec[i].b==="b:"+botRef)yaEsta=true;}
+    if(!yaEsta)rec.unshift({b:"b:"+botRef,o:copaOz});
+  }
+  var obj={id:id,n:n,p:p,c:c,tipo:tipo,desc:desc,copaOz:copaOz,botRef:botRef,r:rec};
+  var found=false;
+  for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU[i]=obj;found=true;break;}}
+  if(!found)MENU.push(obj);
+  sSet("menu",MENU);cerrarM("m-beb");renderMenu();toast("Guardado");
+}
 function elimBeb(id){
   confirmar("Eliminar bebida","Se borrara del menu permanentemente","&#127861;",function(){
     for(var i=0;i<MENU.length;i++){if(MENU[i].id===id){MENU.splice(i,1);break;}}
@@ -1744,7 +1876,10 @@ function abrirVasoCfg(){
 function renderVasoCfg(){
   var html="";var opts=CFG.vasoOpts||[];
   for(var i=0;i<opts.length;i++){
-    var o=opts[i];var pStr=o.p>0?"+"+fmt(o.p):"Gratis";
+    var o=opts[i];
+    // Migrar formato viejo si es string
+    if(typeof o==="string")o={n:o,p:0};
+    var pStr=o.p>0?"+"+fmt(o.p):"Gratis";
     html+="<div class=\"vaso-opt\" data-xfn=\"abrirEditVaso\" data-xid=\""+i+"\">";
     html+="<span class=\"vaso-opt-n\">"+esc(o.n)+"</span>";
     html+="<span class=\"vaso-opt-p\">"+pStr+"</span>";
@@ -1754,9 +1889,13 @@ function renderVasoCfg(){
   el("vaso-cfg-list").innerHTML=html;bindXEvents(el("vaso-cfg-list"));
 }
 function abrirEditVaso(idx){
-  var i=parseInt(idx);var o=CFG.vasoOpts[i];
+  var i=parseInt(idx);
+  if(!CFG.vasoOpts||!CFG.vasoOpts[i]){toast("Opcion no encontrada","e");return;}
+  var o=CFG.vasoOpts[i];
+  // Migrar formato viejo (string) a objeto
+  if(typeof o==="string")o={n:o,p:0};
   el("vaso-edit-idx").value=i;
-  el("vaso-edit-n").value=o.n;
+  el("vaso-edit-n").value=o.n||"";
   el("vaso-edit-p").value=o.p||0;
   abrirM("m-vaso-edit");
 }
@@ -2325,7 +2464,7 @@ function bindAll(){
   el("btn-gastom").onclick=function(){abrirM("m-gasto");};el("btn-addgb").onclick=function(){abrirM("m-gbt");};el("btn-ggasto").onclick=guardarGasto;el("btn-ggbt").onclick=guardarGBtn;
   // Menu
   el("btn-addbeb").onclick=function(){openEditBeb(null);};el("btn-adding").onclick=function(){addIng("","");};el("btn-gbeb").onclick=guardarBeb;
-  el("beb-tipo").onchange=function(){el("beb-desc-wrap").style.display=this.value==="paquete"?"block":"none";};
+  el("beb-tipo").onchange=function(){actualizarCamposTipo(this.value);};
   el("btn-vaso-cfg").onclick=abrirVasoCfg;
   el("btn-add-vaso").onclick=addVasoOpt;
   // Embajadores
